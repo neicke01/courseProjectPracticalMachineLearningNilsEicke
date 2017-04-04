@@ -1,0 +1,112 @@
+## Practical Machine Learning
+## Course Project by Nils Eicke
+In this project, the goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants.
+They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website 
+here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset). 
+For this project training data and test data were used. The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har.
+
+The goal of this project is to predict the manner in which the participants did the exercise. This is the "classe" variable in the 
+training set. Almost any of the other variables are used to predict with. It is described how the model has been built, how 
+cross validation has been used, what I think the expected out of sample error is, and why I made the choices I did. 
+The prediction model has been also used to predict 20 different test cases. 
+
+Firstly packages and data has been loaded into R 
+```{r}
+#load packages
+install.packages("AppliedPredictiveModeling")
+install.packages("caret")
+install.packages("randomForest")
+install.packages("e1071")
+library(AppliedPredictiveModeling)
+library(caret)
+library(e1071)
+library(randomForest)
+
+#download training data
+download.file(url="https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile="data/pml-training.csv")
+
+#download test data
+download.file(url="https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile="data/pml-testing.csv")
+
+#import data; set empty values to NA
+training_set <- read.csv("data/pml-training.csv", na.strings=c("NA",""), header=TRUE)
+testing_set <- read.csv("data/pml-testing.csv", na.strings=c("NA",""), header=TRUE)
+```
+
+Secondly data has been explored.
+```{r}
+dim(training_set)
+dim(testing_set)
+
+countNAs <- function(x) {
+    #create count NAs vector
+	countNA <- names(x)
+	countNA <- rbind(countNA,0)
+
+	#determine number of NAs for each column
+    for (i in 1:length(names(x))) {
+        countNA[2,i] <- length(which(is.na(x[,i])))
+    }
+	print(countNA)
+}
+
+test_countNAs <- countNAs(testing_set)
+train_countNAs <- countNAs(training_set)
+
+unique(test_countNAs[2,])
+unique(train_countNAs[2,])
+
+#check if columnames of test and training data are equal (except classe and problem_id)  
+test_colnames <- test_countNAs[1,test_countNAs[2,] == "0"]
+train_colnames <- train_countNAs[1,train_countNAs[2,] == "0"]
+test_colnames
+train_colnames
+all.equal(train_colnames[1:length(train_colnames)-1], test_colnames[1:length(test_colnames)-1])
+```
+
+There are 160 variables in the training and testing data with 19622 training data values and 20 testing data values.
+Either no value of a testing data variable is NA (not available) or all 20 values of a testing data variable are NA.
+Either no value of a training data variable is NA or almost all values (19216 of 19622) of a training data variable are NA.
+
+Thirdly data has been cleaned.
+```{r}
+#NA data are removed
+dim(testing_set[,names(testing_set) %in% test_colnames])
+dim(training_set[,names(training_set) %in% train_colnames])
+training_subset <- training_set[,names(training_set) %in% train_colnames]
+testing_subset <- testing_set[,names(testing_set) %in% test_colnames]
+
+#the first 7 columns are not necessary
+training_subset <- training_subset[,8:length(colnames(training_subset))]
+testing_subset <- testing_subset[,8:length(colnames(testing_subset))]
+```
+
+Lastly the prediction model has been built.
+```{r}
+#because the dataset is too big for using random forest, we use only 20% of the dataset
+set.seed(1)
+ids <- createDataPartition(y=training_subset$classe, p=0.2, list=FALSE)
+training_small <- training_subset[ids,]
+
+#devide the large training_set into a training and a test set
+set.seed(1)
+inTrain <- createDataPartition(y=training_small$classe, p=0.7, list=FALSE)
+training_train_set <- training_small[inTrain,]
+testing_train_set <- training_small[-inTrain,]
+
+#train on training set with cross validation.
+set.seed(1)
+modFit <- train(classe ~ ., method="rf", trControl=trainControl(method = "cv", number = 4), data=training_train_set)
+print(modFit, digits=3)
+
+#predict testing
+predictions <- predict(modFit, newdata=testing_train_set)
+print(confusionMatrix(predictions, testing_train_set$classe), digits=4)
+
+#20 testing set
+print(predict(modFit, newdata=testing_subset))
+```
+
+The accuracy of mtry = 27 has the largest value: 0.947
+The out of Sample Error is the error rate on the testing data set: 1 - .9719 = 0.0281
+The prediction (classe) of 20 testing set is: B A B A A E D B A A B C B A E E A B B B
